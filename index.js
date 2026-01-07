@@ -8,7 +8,14 @@ const path = require('path');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const isHeadless = args.includes('-headless') || args.includes('--headless');
+// Check for headless flag (supports -headless, --headless, or any variation)
+const isHeadless = args.some(arg => 
+    arg === '-headless' || 
+    arg === '--headless' || 
+    arg.toLowerCase() === 'headless' ||
+    arg.startsWith('--headless') ||
+    arg.startsWith('-headless')
+);
 
 // -- Constants --
 const CARDS_TO_CHECK = 5; // Number of most recent cards to check
@@ -464,10 +471,9 @@ async function main() {
             args: ['--disable-blink-features=AutomationControlled']
         };
         
-        if (isHeadless) {
-            console.log('Running in headless mode (browser will not be visible).');
-        } else {
-            console.log('Running in headed mode (browser will be visible).');
+        console.log(`Running in ${isHeadless ? 'headless' : 'headed'} mode (browser will ${isHeadless ? 'not ' : ''}be visible).`);
+        if (args.length > 0 && !isHeadless) {
+            console.log('Note: To run in headless mode, use: npm start -- --headless or npm run start:headless');
         }
 
         if (chromeUserDataDir) {
