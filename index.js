@@ -15,7 +15,8 @@ const searchKeywords = process.env.SEARCH_KEYWORDS;
 const searchLocation = process.env.SEARCH_LOCATION;
 const searchPostedMinutes = parseInt(process.env.SEARCH_POSTED_MINUTES, 10) || 1440; // Default 24 hours
 const searchWorkplaceType = process.env.SEARCH_WORKPLACE_TYPE;
-const searchJobFunctions = process.env.SEARCH_JOB_FUNCTIONS; // New: Job function codes (e.g., "it,eng,qa")
+const searchJobFunctions = process.env.SEARCH_JOB_FUNCTIONS; // Job function codes (e.g., "it,eng,qa")
+const searchIndustries = process.env.SEARCH_INDUSTRIES; // Industry/sector codes (e.g., "96,6" for IT Services and Technology)
 const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
 const refreshIntervalSeconds = parseInt(process.env.REFRESH_INTERVAL_SECONDS, 10) || 10; // Default 10 seconds
 const chromeUserDataDir = process.env.CHROME_USER_DATA_DIR; // Optional
@@ -61,10 +62,16 @@ function buildLinkedInSearchUrl() {
         params.set('f_WT', workplaceParam);
     }
 
-    // Add Job Function Filter (f_F) - NEW
+    // Add Job Function Filter (f_F)
     if (searchJobFunctions && searchJobFunctions.trim()) {
         console.log(`Applying Job Function filter: ${searchJobFunctions}`);
         params.set('f_F', searchJobFunctions.trim()); // Pass the comma-separated string directly
+    }
+
+    // Add Industry/Sector Filter (f_I)
+    if (searchIndustries && searchIndustries.trim()) {
+        console.log(`Applying Industry filter: ${searchIndustries}`);
+        params.set('f_I', searchIndustries.trim()); // Pass the comma-separated string directly
     }
 
     params.set('sortBy', 'DD'); // Sort by date descending (most recent)
@@ -123,12 +130,8 @@ async function sendToDiscord(job) {
         const fields = [
             { name: 'Company', value: job.company || 'N/A', inline: true },
             { name: 'Location', value: job.location || 'N/A', inline: true },
+            { name: 'Workplace', value: job.workplaceType || 'Unknown', inline: true }, // Always show workplace type
         ];
-
-        // Add optional fields only if they exist and are not 'N/A'
-        if (job.workplaceType && job.workplaceType !== 'N/A') {
-            fields.push({ name: 'Workplace', value: job.workplaceType, inline: true });
-        }
         if (job.jobType && job.jobType !== 'N/A') {
             fields.push({ name: 'Job Type', value: job.jobType, inline: true });
         }
@@ -291,7 +294,28 @@ async function scrapeFirstNJobs(page, count) {
                         if (!companyLogoUrl) companyLogoUrl = await safeGetAttribute(detailContainer.locator('.ivm-image-view-model img').first(), 'src', 2000);
 
                         const tertiaryDescContainer = detailContainer.locator('.job-details-jobs-unified-top-card__tertiary-description-container'); 
-                        location = await safeGetText(tertiaryDescContainer.locator('span.tvm__text').first(), 3000); 
+                        let rawLocation = await safeGetText(tertiaryDescContainer.locator('span.tvm__text').first(), 3000); 
+                        
+                        // Extract workplace type from location string (e.g., "Bellevue, WA (Remote)" -> "Remote")
+                        if (rawLocation !== 'N/A' && rawLocation.includes('(')) {
+                            const workplaceMatch = rawLocation.match(/\(([^)]+)\)/);
+                            if (workplaceMatch) {
+                                const extractedWorkplace = workplaceMatch[1].trim();
+                                if (['Remote', 'Hybrid', 'On-site', 'On-Site'].includes(extractedWorkplace)) {
+                                    workplaceType = extractedWorkplace === 'On-Site' ? 'On-site' : extractedWorkplace;
+                                    // Remove workplace type from location string
+                                    location = rawLocation.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                                    console.log(`${logPrefix} Extracted workplace type from location: "${workplaceType}", cleaned location: "${location}"`);
+                                } else {
+                                    location = rawLocation; // Keep original if pattern doesn't match expected values
+                                }
+                            } else {
+                                location = rawLocation; // No parentheses found, use as-is
+                            }
+                        } else {
+                            location = rawLocation; // Use raw location if extraction failed
+                        }
+                        
                         const tertiaryDescText = await safeGetText(tertiaryDescContainer, 5000); 
                         console.log(`${logPrefix} Raw Tertiary Desc Text: "${tertiaryDescText}"`);
                         if (tertiaryDescText !== 'N/A') {
@@ -302,21 +326,33 @@ async function scrapeFirstNJobs(page, count) {
                             console.log(`${logPrefix} Regex Matches - Posted: ${postedTime}, Applicants: ${applicantCount}`);
                         }
 
-                        salary = 'N/A'; workplaceType = 'N/A'; jobType = 'N/A'; 
+                        // Try to get workplace type from preference pills if not already found
+                        salary = 'N/A'; 
+                        jobType = 'N/A';
+                        
                         try {
                             const skillsButton = detailContainer.locator('button.job-details-preferences-and-skills');
                             const skillPills = await skillsButton.locator('.job-details-preferences-and-skills__pill').all();
                             for (const pill of skillPills) {
                                 const pillText = await safeGetText(pill.locator('span.ui-label'), 2500);
                                 if (pillText !== 'N/A') {
-                                    if (['Remote', 'Hybrid', 'On-site'].includes(pillText)) workplaceType = pillText;
-                                    else if (['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship', 'Volunteer'].some(jt => pillText.includes(jt))) {
+                                    // Only set workplaceType if we haven't found it yet
+                                    if (workplaceType === 'N/A' && ['Remote', 'Hybrid', 'On-site', 'On-Site'].includes(pillText)) {
+                                        workplaceType = pillText === 'On-Site' ? 'On-site' : pillText;
+                                        console.log(`${logPrefix} Found workplace type from pill: "${workplaceType}"`);
+                                    } else if (['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship', 'Volunteer'].some(jt => pillText.includes(jt))) {
                                         const match = pillText.match(/(Full-time|Part-time|Contract|Temporary|Internship|Volunteer)/i);
                                         if (match) jobType = match[0];
                                     } else if (pillText.includes('$') || pillText.toLowerCase().includes('k/yr') || pillText.toLowerCase().includes('/hr')) salary = pillText;
                                 }
                             }
                         } catch (pillError) { console.warn(`${logPrefix} Error locating or processing preference pills: ${pillError.message}`); }
+                        
+                        // If workplaceType is still 'N/A', set it to 'Unknown' so it always shows in Discord
+                        if (workplaceType === 'N/A') {
+                            workplaceType = 'Unknown';
+                            console.log(`${logPrefix} Workplace type not found, setting to 'Unknown'`);
+                        }
 
                         try {
                             const easyApplyButton = detailContainer.locator('button.jobs-apply-button:has-text("Easy Apply")').first();
@@ -400,7 +436,8 @@ async function main() {
     console.log('--- LinkedIn Job Watcher ---');
     console.log(`Configured URL: ${targetUrl}`);
     console.log(`Workplace Filter: ${searchWorkplaceType || 'Any'}`);
-    console.log(`Job Function Filter: ${searchJobFunctions || 'Any'}`); // New Log
+    console.log(`Job Function Filter: ${searchJobFunctions || 'Any'}`);
+    console.log(`Industry Filter: ${searchIndustries || 'Any'}`);
     console.log(`Refresh Interval: ${refreshIntervalSeconds} seconds`);
     console.log(`Cards to Check per Refresh: ${CARDS_TO_CHECK}`);
     console.log(`User Data Dir: ${chromeUserDataDir || 'No (temporary profile)'}`);

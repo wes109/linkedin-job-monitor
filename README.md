@@ -44,6 +44,7 @@ SEARCH_LOCATION=your location here
 SEARCH_POSTED_MINUTES=1440
 SEARCH_WORKPLACE_TYPE=Remote
 SEARCH_JOB_FUNCTIONS=it,eng,qa
+SEARCH_INDUSTRIES=96,6
 DISCORD_WEBHOOK_URL=your_discord_webhook_url
 REFRESH_INTERVAL_SECONDS=10
 CHROME_USER_DATA_DIR=chrome-profile
@@ -63,6 +64,10 @@ CHROME_USER_DATA_DIR=chrome-profile
   - `qa` - Quality Assurance
   - `cnsl` - Consulting
   - `mgmt` - Management
+- `SEARCH_INDUSTRIES` (optional): Comma-separated industry/sector codes (e.g., `96,6`). Common codes:
+  - `6` - Technology, Information and Internet
+  - `96` - IT Services and IT Consulting
+  - (To find more codes, apply industry filters on LinkedIn and check the URL for `f_I=` parameter values)
 - `DISCORD_WEBHOOK_URL` (required): Your Discord webhook URL
 - `REFRESH_INTERVAL_SECONDS` (optional): How often to check for new jobs in seconds (default: 10)
 - `CHROME_USER_DATA_DIR` (optional): Path to Chrome user profile directory for persistent login (default: temporary profile)
