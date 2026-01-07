@@ -28,6 +28,7 @@ const searchPostedMinutes = parseInt(process.env.SEARCH_POSTED_MINUTES, 10) || 1
 const searchWorkplaceType = process.env.SEARCH_WORKPLACE_TYPE;
 const searchJobFunctions = process.env.SEARCH_JOB_FUNCTIONS; // Job function codes (e.g., "it,eng,qa")
 const searchIndustries = process.env.SEARCH_INDUSTRIES; // Industry/sector codes (e.g., "96,6" for IT Services and Technology)
+const filterKeywords = process.env.FILTER_KEYWORDS; // Optional: Comma-separated keywords to filter jobs by title (e.g., "qa,quality,automation,test")
 const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
 const refreshIntervalSeconds = parseInt(process.env.REFRESH_INTERVAL_SECONDS, 10) || 10; // Default 10 seconds
 const chromeUserDataDir = process.env.CHROME_USER_DATA_DIR; // Optional
@@ -122,6 +123,27 @@ async function safeGetAttribute(locator, attributeName, timeout = 3000) {
         // console.warn(`safeGetAttribute failed for ${attributeName}: ${error.message}`);
         return null;
     }
+}
+
+/**
+ * Checks if a job title matches the filter keywords (if configured).
+ * @param {string} title - Job title to check
+ * @returns {boolean} - True if job should be included (matches keywords or no filter configured)
+ */
+function matchesFilterKeywords(title) {
+    if (!filterKeywords || !filterKeywords.trim()) {
+        return true; // No filter configured, include all jobs
+    }
+    
+    const keywords = filterKeywords.split(',').map(k => k.trim().toLowerCase()).filter(k => k.length > 0);
+    if (keywords.length === 0) {
+        return true; // Empty filter, include all jobs
+    }
+    
+    const titleLower = (title || '').toLowerCase();
+    const matches = keywords.some(keyword => titleLower.includes(keyword));
+    
+    return matches;
 }
 
 /**
@@ -427,6 +449,14 @@ async function scrapeFirstNJobs(page, count) {
                     console.log(`${logPrefix} FINAL DETAILS for NEW job ${jobId}: Company='${company}', Location='${location}', Workplace='${workplaceType}', Type='${jobType}', Salary='${salary}', Posted='${postedTime}', Applicants='${applicantCount}', EasyApply=${isEasyApply}, LogoURL='${companyLogoUrl}'`);
                     
                     if (jobId && listTitle !== 'N/A') {
+                        // Check if job matches filter keywords (if configured)
+                        if (!matchesFilterKeywords(listTitle)) {
+                            console.log(`${logPrefix} Job title "${listTitle}" does not match filter keywords. Skipping webhook.`);
+                            // Still mark as sent so we don't check it again
+                            await markJobAsSent(jobId);
+                            continue;
+                        }
+                        
                          const job = {
                             id: jobId,
                             title: listTitle,
@@ -490,6 +520,7 @@ async function main() {
     console.log(`Workplace Filter: ${searchWorkplaceType || 'Any'}`);
     console.log(`Job Function Filter: ${searchJobFunctions || 'Any'}`);
     console.log(`Industry Filter: ${searchIndustries || 'Any'}`);
+    console.log(`Title Filter Keywords: ${filterKeywords || 'None (all jobs included)'}`);
     console.log(`Refresh Interval: ${refreshIntervalSeconds} seconds`);
     console.log(`Cards to Check per Refresh: ${CARDS_TO_CHECK}`);
     console.log(`User Data Dir: ${chromeUserDataDir || 'No (temporary profile)'}`);

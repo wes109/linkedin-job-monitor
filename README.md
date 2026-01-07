@@ -48,6 +48,7 @@ SEARCH_POSTED_MINUTES=1440
 SEARCH_WORKPLACE_TYPE=Remote
 SEARCH_JOB_FUNCTIONS=it,eng,qa
 SEARCH_INDUSTRIES=96,6
+FILTER_KEYWORDS=qa,quality,automation,test,testing
 DISCORD_WEBHOOK_URL=your_discord_webhook_url
 REFRESH_INTERVAL_SECONDS=10
 CHROME_USER_DATA_DIR=chrome-profile
@@ -71,6 +72,7 @@ CHROME_USER_DATA_DIR=chrome-profile
   - `6` - Technology, Information and Internet
   - `96` - IT Services and IT Consulting
   - (To find more codes, apply industry filters on LinkedIn and check the URL for `f_I=` parameter values)
+- `FILTER_KEYWORDS` (optional): Comma-separated keywords to filter jobs by title before sending to Discord. Only jobs whose titles contain at least one of these keywords will be sent. Case-insensitive. Example: `qa,quality,automation,test,testing` (leave blank to include all jobs)
 - `DISCORD_WEBHOOK_URL` (required): Your Discord webhook URL
 - `REFRESH_INTERVAL_SECONDS` (optional): How often to check for new jobs in seconds (default: 10)
 - `CHROME_USER_DATA_DIR` (optional): Path to Chrome user profile directory for persistent login (default: temporary profile)
