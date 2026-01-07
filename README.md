@@ -2,6 +2,9 @@
 
 Automatically tracks new LinkedIn job postings and sends notifications to Discord via webhook.
 
+![example](https://github.com/user-attachments/assets/140835b6-073e-492e-bc70-951bbbfdf816)
+
+
 ## Features
 
 - 🔍 Monitors LinkedIn job listings based on customizable search criteria
@@ -76,7 +79,7 @@ CHROME_USER_DATA_DIR=chrome-profile
 
 1. Run the script:
 ```bash
-npm start
+npm run start
 ```
 
 2. If you haven't configured a persistent Chrome profile, the browser will open and you'll need to log in to LinkedIn manually. Press Enter in the terminal after logging in.
