@@ -79,8 +79,15 @@ CHROME_USER_DATA_DIR=chrome-profile
 
 1. Run the script:
 ```bash
-npm run start
+npm start
 ```
+
+   Or run with headless mode (browser not visible):
+```bash
+npm start -- -headless
+```
+
+   **Note:** By default, the browser runs in headed mode (visible). Use the `-headless` or `--headless` flag to run without a visible browser window.
 
 2. If you haven't configured a persistent Chrome profile, the browser will open and you'll need to log in to LinkedIn manually. Press Enter in the terminal after logging in.
 

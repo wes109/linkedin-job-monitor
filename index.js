@@ -6,6 +6,10 @@ const axios = require('axios');
 const fs = require('fs').promises; // Use promises version of fs
 const path = require('path');
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const isHeadless = args.includes('-headless') || args.includes('--headless');
+
 // -- Constants --
 const CARDS_TO_CHECK = 5; // Number of most recent cards to check
 const SENT_JOBS_FILE = path.join(__dirname, 'sent_jobs.txt');
@@ -455,10 +459,16 @@ async function main() {
     try {
         // --- Browser Setup --- 
         const launchOptions = {
-            headless: true, 
+            headless: isHeadless, // Controlled by command line argument (-headless or --headless)
             channel: 'chrome',
             args: ['--disable-blink-features=AutomationControlled']
         };
+        
+        if (isHeadless) {
+            console.log('Running in headless mode (browser will not be visible).');
+        } else {
+            console.log('Running in headed mode (browser will be visible).');
+        }
 
         if (chromeUserDataDir) {
             console.log('Launching browser with persistent context...');
