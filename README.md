@@ -2,6 +2,9 @@
 
 Automatically tracks new LinkedIn job postings and sends notifications to Discord via webhook.
 
+![example](https://github.com/user-attachments/assets/140835b6-073e-492e-bc70-951bbbfdf816)
+
+
 ## Features
 
 - 🔍 Monitors LinkedIn job listings based on customizable search criteria
