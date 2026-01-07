@@ -141,8 +141,12 @@ async function sendToDiscord(job) {
         const fields = [
             { name: 'Company', value: job.company || 'N/A', inline: true },
             { name: 'Location', value: job.location || 'N/A', inline: true },
-            { name: 'Workplace', value: job.workplaceType || 'Unknown', inline: true }, // Always show workplace type
         ];
+        
+        // Add workplace type only if it was found
+        if (job.workplaceType && job.workplaceType !== 'N/A') {
+            fields.push({ name: 'Workplace', value: job.workplaceType, inline: true });
+        }
         if (job.jobType && job.jobType !== 'N/A') {
             fields.push({ name: 'Job Type', value: job.jobType, inline: true });
         }
@@ -269,6 +273,24 @@ async function scrapeFirstNJobs(page, count) {
                         continue; 
                     }
 
+                    // --- Extract workplace type from card location BEFORE clicking ---
+                    try {
+                        const cardLocationText = await safeGetText(card.locator('.job-card-container__metadata-wrapper span').first(), 2000);
+                        console.log(`${logPrefix} Card location text: "${cardLocationText}"`);
+                        if (cardLocationText !== 'N/A' && cardLocationText.includes('(')) {
+                            const workplaceMatch = cardLocationText.match(/\(([^)]+)\)/);
+                            if (workplaceMatch) {
+                                const extractedWorkplace = workplaceMatch[1].trim();
+                                if (['Remote', 'Hybrid', 'On-site', 'On-Site'].includes(extractedWorkplace)) {
+                                    workplaceType = extractedWorkplace === 'On-Site' ? 'On-site' : extractedWorkplace;
+                                    console.log(`${logPrefix} Extracted workplace type from card: "${workplaceType}"`);
+                                }
+                            }
+                        }
+                    } catch (cardLocationError) {
+                        console.warn(`${logPrefix} Could not extract workplace type from card location: ${cardLocationError.message}`);
+                    }
+
                     // --- Title Extraction ---
                     let titleFromStrong = 'N/A', titleFromAria = null, finalTitle = 'N/A';
                     try { titleFromStrong = await safeGetText(card.locator('.job-card-list__title strong').first(), 2000); } catch { /*ignore*/ }
@@ -284,6 +306,24 @@ async function scrapeFirstNJobs(page, count) {
                     }
                     console.log(`${logPrefix} Final Cleaned Title: "${listTitle}"`);
                     // --- End Title ---
+
+                    // --- Extract workplace type from card location BEFORE clicking ---
+                    try {
+                        const cardLocationText = await safeGetText(card.locator('.job-card-container__metadata-wrapper span').first(), 2000);
+                        console.log(`${logPrefix} Card location text: "${cardLocationText}"`);
+                        if (cardLocationText !== 'N/A' && cardLocationText.includes('(')) {
+                            const workplaceMatch = cardLocationText.match(/\(([^)]+)\)/);
+                            if (workplaceMatch) {
+                                const extractedWorkplace = workplaceMatch[1].trim();
+                                if (['Remote', 'Hybrid', 'On-site', 'On-Site'].includes(extractedWorkplace)) {
+                                    workplaceType = extractedWorkplace === 'On-Site' ? 'On-site' : extractedWorkplace;
+                                    console.log(`${logPrefix} Extracted workplace type from card: "${workplaceType}"`);
+                                }
+                            }
+                        }
+                    } catch (cardLocationError) {
+                        console.warn(`${logPrefix} Could not extract workplace type from card location: ${cardLocationError.message}`);
+                    }
 
                     link = await titleLinkLocator.getAttribute('href', { timeout: 3000 }) || '#';
                     if (link.startsWith('/')) link = `https://www.linkedin.com${link}`;
@@ -307,8 +347,8 @@ async function scrapeFirstNJobs(page, count) {
                         const tertiaryDescContainer = detailContainer.locator('.job-details-jobs-unified-top-card__tertiary-description-container'); 
                         let rawLocation = await safeGetText(tertiaryDescContainer.locator('span.tvm__text').first(), 3000); 
                         
-                        // Extract workplace type from location string (e.g., "Bellevue, WA (Remote)" -> "Remote")
-                        if (rawLocation !== 'N/A' && rawLocation.includes('(')) {
+                        // Extract workplace type from location string if not already found from card (e.g., "Bellevue, WA (Remote)" -> "Remote")
+                        if (workplaceType === 'N/A' && rawLocation !== 'N/A' && rawLocation.includes('(')) {
                             const workplaceMatch = rawLocation.match(/\(([^)]+)\)/);
                             if (workplaceMatch) {
                                 const extractedWorkplace = workplaceMatch[1].trim();
@@ -316,12 +356,19 @@ async function scrapeFirstNJobs(page, count) {
                                     workplaceType = extractedWorkplace === 'On-Site' ? 'On-site' : extractedWorkplace;
                                     // Remove workplace type from location string
                                     location = rawLocation.replace(/\s*\([^)]+\)\s*$/, '').trim();
-                                    console.log(`${logPrefix} Extracted workplace type from location: "${workplaceType}", cleaned location: "${location}"`);
+                                    console.log(`${logPrefix} Extracted workplace type from detail pane location: "${workplaceType}", cleaned location: "${location}"`);
                                 } else {
                                     location = rawLocation; // Keep original if pattern doesn't match expected values
                                 }
                             } else {
                                 location = rawLocation; // No parentheses found, use as-is
+                            }
+                        } else if (rawLocation !== 'N/A') {
+                            // If workplace type already found from card, just clean the location
+                            if (rawLocation.includes('(')) {
+                                location = rawLocation.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                            } else {
+                                location = rawLocation;
                             }
                         } else {
                             location = rawLocation; // Use raw location if extraction failed
@@ -358,12 +405,6 @@ async function scrapeFirstNJobs(page, count) {
                                 }
                             }
                         } catch (pillError) { console.warn(`${logPrefix} Error locating or processing preference pills: ${pillError.message}`); }
-                        
-                        // If workplaceType is still 'N/A', set it to 'Unknown' so it always shows in Discord
-                        if (workplaceType === 'N/A') {
-                            workplaceType = 'Unknown';
-                            console.log(`${logPrefix} Workplace type not found, setting to 'Unknown'`);
-                        }
 
                         try {
                             const easyApplyButton = detailContainer.locator('button.jobs-apply-button:has-text("Easy Apply")').first();
