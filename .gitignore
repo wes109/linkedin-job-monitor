@@ -1,0 +1,16 @@
+# Node modules
+node_modules/
+
+# Environment variables file (included in repo since secrets are removed)
+# .env
+
+# Playwright state and traces
+.playwright/
+test-results/
+playwright-report/
+
+# Sent jobs tracking file
+sent_jobs.txt
+
+# Chrome user profile directory
+chrome-profile/ 
