@@ -410,23 +410,65 @@ async function scrapeFirstNJobs(page, count) {
                         salary = 'N/A'; 
                         jobType = 'N/A';
                         
+                        // First, try to extract salary from job-details-fit-level-preferences buttons (most reliable)
                         try {
-                            const skillsButton = detailContainer.locator('button.job-details-preferences-and-skills');
-                            const skillPills = await skillsButton.locator('.job-details-preferences-and-skills__pill').all();
-                            for (const pill of skillPills) {
-                                const pillText = await safeGetText(pill.locator('span.ui-label'), 2500);
-                                if (pillText !== 'N/A') {
-                                    // Only set workplaceType if we haven't found it yet
-                                    if (workplaceType === 'N/A' && ['Remote', 'Hybrid', 'On-site', 'On-Site'].includes(pillText)) {
-                                        workplaceType = pillText === 'On-Site' ? 'On-site' : pillText;
-                                        console.log(`${logPrefix} Found workplace type from pill: "${workplaceType}"`);
-                                    } else if (['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship', 'Volunteer'].some(jt => pillText.includes(jt))) {
-                                        const match = pillText.match(/(Full-time|Part-time|Contract|Temporary|Internship|Volunteer)/i);
-                                        if (match) jobType = match[0];
-                                    } else if (pillText.includes('$') || pillText.toLowerCase().includes('k/yr') || pillText.toLowerCase().includes('/hr')) salary = pillText;
+                            const fitLevelButtons = detailContainer.locator('.job-details-fit-level-preferences button').all();
+                            const buttons = await fitLevelButtons;
+                            for (const button of buttons) {
+                                const buttonText = await safeGetText(button, 2000);
+                                if (buttonText !== 'N/A' && (buttonText.includes('$') || buttonText.toLowerCase().includes('k/yr') || buttonText.toLowerCase().includes('/hr') || buttonText.toLowerCase().includes('per hour') || buttonText.toLowerCase().includes('per year'))) {
+                                    salary = buttonText.trim();
+                                    console.log(`${logPrefix} Found salary from fit-level-preferences: "${salary}"`);
+                                    break; // Found salary, no need to check other sources
                                 }
                             }
-                        } catch (pillError) { console.warn(`${logPrefix} Error locating or processing preference pills: ${pillError.message}`); }
+                        } catch (fitLevelError) { 
+                            console.warn(`${logPrefix} Error locating fit-level-preferences buttons: ${fitLevelError.message}`); 
+                        }
+                        
+                        // If salary not found, try preference pills
+                        if (salary === 'N/A') {
+                            try {
+                                const skillsButton = detailContainer.locator('button.job-details-preferences-and-skills');
+                                const skillPills = await skillsButton.locator('.job-details-preferences-and-skills__pill').all();
+                                for (const pill of skillPills) {
+                                    const pillText = await safeGetText(pill.locator('span.ui-label'), 2500);
+                                    if (pillText !== 'N/A') {
+                                        // Only set workplaceType if we haven't found it yet
+                                        if (workplaceType === 'N/A' && ['Remote', 'Hybrid', 'On-site', 'On-Site'].includes(pillText)) {
+                                            workplaceType = pillText === 'On-Site' ? 'On-site' : pillText;
+                                            console.log(`${logPrefix} Found workplace type from pill: "${workplaceType}"`);
+                                        } else if (['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship', 'Volunteer'].some(jt => pillText.includes(jt))) {
+                                            const match = pillText.match(/(Full-time|Part-time|Contract|Temporary|Internship|Volunteer)/i);
+                                            if (match) jobType = match[0];
+                                        } else if (pillText.includes('$') || pillText.toLowerCase().includes('k/yr') || pillText.toLowerCase().includes('/hr') || pillText.toLowerCase().includes('per hour') || pillText.toLowerCase().includes('per year')) {
+                                            salary = pillText.trim();
+                                            console.log(`${logPrefix} Found salary from preference pill: "${salary}"`);
+                                        }
+                                    }
+                                }
+                            } catch (pillError) { console.warn(`${logPrefix} Error locating or processing preference pills: ${pillError.message}`); }
+                        }
+                        
+                        // If salary still not found, try extracting from job card metadata as fallback
+                        if (salary === 'N/A') {
+                            try {
+                                const cardMetadata = card.locator('.job-card-container__metadata-wrapper span').first();
+                                const metadataText = await safeGetText(cardMetadata, 2000);
+                                if (metadataText !== 'N/A' && (metadataText.includes('$') || metadataText.toLowerCase().includes('k/yr') || metadataText.toLowerCase().includes('/hr'))) {
+                                    // Extract just the salary part (might include benefits like "$50/hr · 401(k), +1 benefit" or "$53.85/hr - $63.85/hr")
+                                    // Try to match full range first, then single value
+                                    const salaryMatch = metadataText.match(/(\$[\d,]+(?:\.[\d]+)?\s*(?:\/hr|\/hour|k\/yr|per hour|per year)(?:\s*-\s*\$[\d,]+(?:\.[\d]+)?\s*(?:\/hr|\/hour|k\/yr|per hour|per year))?)/i) ||
+                                                       metadataText.match(/(\$[\d,]+(?:\.[\d]+)?\s*(?:\/hr|\/hour|k\/yr|per hour|per year))/i);
+                                    if (salaryMatch) {
+                                        salary = salaryMatch[0].trim();
+                                        console.log(`${logPrefix} Found salary from card metadata: "${salary}"`);
+                                    }
+                                }
+                            } catch (cardMetadataError) { 
+                                console.warn(`${logPrefix} Error extracting salary from card metadata: ${cardMetadataError.message}`); 
+                            }
+                        }
 
                         try {
                             const easyApplyButton = detailContainer.locator('button.jobs-apply-button:has-text("Easy Apply")').first();
@@ -596,20 +638,85 @@ async function main() {
         monitoringInterval = setInterval(async () => {
             try {
                 console.log(`--- Refreshing & Checking (${new Date().toLocaleTimeString()}) ---`);
-                await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-                console.log('Page reloaded. Checking for new jobs...');
+                
+                // Try reload first, with fallback to navigation if it fails
+                try {
+                    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+                    console.log('Page reloaded. Checking for new jobs...');
+                } catch (reloadError) {
+                    // If reload fails (e.g., page detached, navigation aborted), try navigating to the URL again
+                    if (reloadError.message.includes('detached') || 
+                        reloadError.message.includes('ERR_ABORTED') ||
+                        reloadError.message.includes('Target closed') ||
+                        reloadError.message.includes('Target page, context or browser has been closed')) {
+                        console.warn(`Reload failed (${reloadError.message}). Attempting to navigate to URL instead...`);
+                        try {
+                            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+                            console.log('Navigated to target URL. Checking for new jobs...');
+                        } catch (navError) {
+                            // If navigation also fails, try to get a new page
+                            console.warn(`Navigation also failed (${navError.message}). Attempting to get a new page...`);
+                            if (browserContext) {
+                                try {
+                                    const pages = browserContext.pages();
+                                    if (pages.length > 0) {
+                                        page = pages[0];
+                                        console.log('Using existing page from context.');
+                                    } else {
+                                        page = await browserContext.newPage();
+                                        console.log('Created new page.');
+                                    }
+                                    page.setDefaultTimeout(60000);
+                                    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+                                    console.log('Navigated to target URL on new page.');
+                                } catch (recoveryError) {
+                                    throw new Error(`Failed to recover page: ${recoveryError.message}`);
+                                }
+                            } else {
+                                throw new Error('Browser context is not available for recovery.');
+                            }
+                        }
+                    } else {
+                        // Re-throw if it's a different type of error
+                        throw reloadError;
+                    }
+                }
+                
                 // scrapeFirstNJobs now handles checking and sending internally
                 const newlySentCount = await scrapeFirstNJobs(page, CARDS_TO_CHECK); 
                 console.log(`Refresh check complete. Sent ${newlySentCount} new jobs this cycle.`);
 
             } catch (intervalError) {
                 console.error(`Error during monitoring interval: ${intervalError.message}`);
-                if (intervalError.message.includes('Target page, context or browser has been closed')) {
+                if (intervalError.stack) {
+                    console.error(`Call log:\n${intervalError.stack.split('\n').slice(0, 5).join('\n')}`);
+                }
+                if (intervalError.message.includes('Target page, context or browser has been closed') || 
+                    intervalError.message.includes('Target closed') ||
+                    intervalError.message.includes('Browser closed')) {
                     console.error('Browser/Page closed unexpectedly. Stopping monitoring.');
                     clearInterval(monitoringInterval);
                     process.exit(1); 
                 } else {
                     console.error('Attempting to continue monitoring despite error.');
+                    // Try to recover by getting a new page if possible
+                    try {
+                        if (browserContext) {
+                            const pages = browserContext.pages();
+                            if (pages.length > 0) {
+                                page = pages[0];
+                                console.log('Recovered by using existing page from context.');
+                            } else {
+                                page = await browserContext.newPage();
+                                console.log('Recovered by creating a new page.');
+                            }
+                            page.setDefaultTimeout(60000);
+                            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+                            console.log('Recovered and navigated to target URL.');
+                        }
+                    } catch (recoveryError) {
+                        console.error(`Recovery attempt failed: ${recoveryError.message}`);
+                    }
                 }
             }
         }, refreshIntervalSeconds * 1000);
